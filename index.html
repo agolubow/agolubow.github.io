@@ -1,1 +1,304 @@
-Hello World
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AR.js Solar System</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        
+        #arjsDebugUIContainer {
+            display: none;
+        }
+        
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            font-size: 18px;
+        }
+        
+        .instructions {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            max-width: 300px;
+            z-index: 100;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div id="loadingOverlay" class="loading-overlay">
+        <div>Loading AR experience... Please allow camera access</div>
+    </div>
+    
+    <div class="instructions">
+        <strong>Instructions:</strong><br>
+        1. Allow camera access<br>
+        2. Point camera at a Hiro marker<br>
+        3. Watch the solar system appear!<br>
+        <small>Get marker at: https://ar-js-org.github.io/AR.js/data/images/hiro.png</small>
+    </div>
+
+    <!-- Import map for ES modules -->
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.164.0/build/three.module.js",
+        "threex": "https://cdn.jsdelivr.net/npm/ar.js@3.4.6/three.js/build/ar-threex.mjs"
+      }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { ArToolkitSource, ArToolkitContext, ArMarkerControls } from 'threex';
+
+        let scene, camera, renderer, arToolkitSource, arToolkitContext;
+        let markerRoot;
+        let solarSystem = {};
+        let clock = new THREE.Clock();
+
+        // Initialize AR
+        function init() {
+            // Create scene
+            scene = new THREE.Scene();
+
+            // Create camera
+            camera = new THREE.Camera();
+            scene.add(camera);
+
+            // Create renderer
+            renderer = new THREE.WebGLRenderer({
+                antialias: true,
+                alpha: true
+            });
+            renderer.setClearColor(new THREE.Color('lightgrey'), 0);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.domElement.style.position = 'absolute';
+            renderer.domElement.style.top = '0px';
+            renderer.domElement.style.left = '0px';
+            document.body.appendChild(renderer.domElement);
+
+            // Initialize AR toolkit source (ES module syntax)
+            arToolkitSource = new ArToolkitSource({
+                sourceType: 'webcam'
+            });
+
+            function onResize() {
+                arToolkitSource.onResizeElement();
+                arToolkitSource.copyElementSizeTo(renderer.domElement);
+                if (arToolkitContext.arController !== null) {
+                    arToolkitSource.copyElementSizeTo(arToolkitContext.arController.canvas);
+                }
+            }
+
+            arToolkitSource.init(function onReady() {
+                document.getElementById('loadingOverlay').style.display = 'none';
+                setTimeout(() => {
+                    onResize();
+                }, 2000);
+            });
+
+            window.addEventListener('resize', function() {
+                onResize();
+            });
+
+            // Initialize AR toolkit context (ES module syntax)
+            arToolkitContext = new ArToolkitContext({
+                cameraParametersUrl: 'https://ar-js-org.github.io/AR.js/data/data/camera_para.dat',
+                detectionMode: 'mono',
+                maxDetectionRate: 30,
+                canvasWidth: 80 * 3,
+                canvasHeight: 60 * 3,
+            });
+
+            arToolkitContext.init(function onCompleted() {
+                camera.projectionMatrix.copy(arToolkitContext.getProjectionMatrix());
+            });
+
+            // Create marker root
+            markerRoot = new THREE.Group();
+            scene.add(markerRoot);
+
+            // Initialize marker controls (ES module syntax)
+            var markerControls = new ArMarkerControls(arToolkitContext, markerRoot, {
+                type: 'pattern',
+                patternUrl: 'https://ar-js-org.github.io/AR.js/data/data/patt.hiro',
+                changeMatrixMode: 'cameraTransformMatrix'
+            });
+
+            // Create solar system
+            createSolarSystem();
+
+            // Start render loop
+            animate();
+        }
+
+        function createSolarSystem() {
+            // Sun
+            const sunGeometry = new THREE.SphereGeometry(0.3, 32, 32);
+            const sunMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0xffff00,
+                emissive: 0xffaa00
+            });
+            solarSystem.sun = new THREE.Mesh(sunGeometry, sunMaterial);
+            solarSystem.sun.position.set(0, 0, 0);
+            markerRoot.add(solarSystem.sun);
+
+            // Add light
+            const light = new THREE.PointLight(0xffffff, 1, 100);
+            light.position.set(0, 0, 0);
+            markerRoot.add(light);
+
+            // Planets data: [radius, distance, speed, color]
+            const planetsData = [
+                [0.05, 0.8, 2.0, 0x8c7853],   // Mercury
+                [0.08, 1.1, 1.6, 0xffc649],   // Venus
+                [0.09, 1.5, 1.0, 0x6b93d6],   // Earth
+                [0.07, 1.8, 0.8, 0xc1440e],   // Mars
+                [0.2, 2.5, 0.4, 0xd8ca9d],    // Jupiter
+                [0.18, 3.0, 0.3, 0xfad5a5],   // Saturn
+                [0.12, 3.5, 0.2, 0x4fd0e7],   // Uranus
+                [0.11, 4.0, 0.15, 0x4b70dd]   // Neptune
+            ];
+
+            solarSystem.planets = [];
+            solarSystem.orbits = [];
+
+            planetsData.forEach((planetData, index) => {
+                const [radius, distance, speed, color] = planetData;
+
+                // Create orbit path (visual guide)
+                const orbitGeometry = new THREE.RingGeometry(distance - 0.01, distance + 0.01, 64);
+                const orbitMaterial = new THREE.MeshBasicMaterial({ 
+                    color: 0x444444, 
+                    side: THREE.DoubleSide,
+                    transparent: true,
+                    opacity: 0.3
+                });
+                const orbit = new THREE.Mesh(orbitGeometry, orbitMaterial);
+                orbit.rotation.x = -Math.PI / 2;
+                markerRoot.add(orbit);
+
+                // Create planet
+                const planetGeometry = new THREE.SphereGeometry(radius, 16, 16);
+                const planetMaterial = new THREE.MeshLambertMaterial({ color: color });
+                const planet = new THREE.Mesh(planetGeometry, planetMaterial);
+                
+                // Create planet container for orbit
+                const planetContainer = new THREE.Object3D();
+                planetContainer.add(planet);
+                planet.position.set(distance, 0, 0);
+                
+                markerRoot.add(planetContainer);
+                
+                solarSystem.planets.push({
+                    container: planetContainer,
+                    mesh: planet,
+                    speed: speed,
+                    distance: distance
+                });
+
+                // Add moons for Earth
+                if (index === 2) { // Earth
+                    const moonGeometry = new THREE.SphereGeometry(0.02, 8, 8);
+                    const moonMaterial = new THREE.MeshLambertMaterial({ color: 0xaaaaaa });
+                    const moon = new THREE.Mesh(moonGeometry, moonMaterial);
+                    moon.position.set(0.15, 0, 0);
+                    
+                    const moonContainer = new THREE.Object3D();
+                    moonContainer.add(moon);
+                    planet.add(moonContainer);
+                    
+                    solarSystem.planets[index].moon = {
+                        container: moonContainer,
+                        mesh: moon
+                    };
+                }
+
+                // Add rings for Saturn
+                if (index === 5) { // Saturn
+                    const ringGeometry = new THREE.RingGeometry(radius * 1.2, radius * 1.8, 32);
+                    const ringMaterial = new THREE.MeshLambertMaterial({
+                        color: 0xd4af37,
+                        side: THREE.DoubleSide,
+                        transparent: true,
+                        opacity: 0.7
+                    });
+                    const rings = new THREE.Mesh(ringGeometry, ringMaterial);
+                    rings.rotation.x = Math.PI / 2;
+                    planet.add(rings);
+                }
+            });
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Update AR
+            if (arToolkitSource.ready !== false) {
+                arToolkitContext.update(arToolkitSource.domElement);
+            }
+
+            // Animate solar system
+            const deltaTime = clock.getDelta();
+            const elapsedTime = clock.getElapsedTime();
+
+            // Rotate sun
+            if (solarSystem.sun) {
+                solarSystem.sun.rotation.y += deltaTime * 0.5;
+            }
+
+            // Animate planets
+            solarSystem.planets.forEach((planetData, index) => {
+                // Orbit around sun
+                planetData.container.rotation.y += deltaTime * planetData.speed;
+                
+                // Rotate planet on its axis
+                planetData.mesh.rotation.y += deltaTime * 2;
+
+                // Animate moon for Earth
+                if (planetData.moon) {
+                    planetData.moon.container.rotation.y += deltaTime * 8;
+                }
+            });
+
+            // Render
+            renderer.render(scene, camera);
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', function() {
+            if (arToolkitSource) {
+                arToolkitSource.onResizeElement();
+                arToolkitSource.copyElementSizeTo(renderer.domElement);
+                if (arToolkitContext.arController !== null) {
+                    arToolkitSource.copyElementSizeTo(arToolkitContext.arController.canvas);
+                }
+            }
+        });
+
+        // Initialize when page loads
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
